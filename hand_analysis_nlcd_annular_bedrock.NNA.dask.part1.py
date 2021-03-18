@@ -554,6 +554,7 @@ def find_subgrid(ijind = [j,i]):
             #print('aspect coverage fraction ',aspect_coverage_fraction)
             if aind.size > 0:
                 # calculate geomorphic parameters in each bin
+                determine_first_none_zero_col = 0
                 for n in range(nbins):
                     b1 = hand_bin_bounds[n]
                     b2 = hand_bin_bounds[n+1]
@@ -728,8 +729,9 @@ def find_subgrid(ijind = [j,i]):
 
                         vhillslope_index[asp_ndx*nbins+n] = (asp_ndx+1)
                         vcolumn_index[asp_ndx*nbins+n] = col_cnt
-                        if n == 0:
+                        if determine_first_none_zero_col == 0:
                             vdownhill_column_index[asp_ndx*nbins+n] = -9999
+                            determine_first_none_zero_col += 1
                         else:
                             vdownhill_column_index[asp_ndx*nbins+n] = col_cnt -1
                         col_cnt += 1
