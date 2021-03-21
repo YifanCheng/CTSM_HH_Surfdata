@@ -742,22 +742,22 @@ def find_subgrid(ijind = [j,i]):
                 # check that lowermost bin is less distant than neighboring bin
                 # this can occur when a gridcell contains both a plain and
                 # a hilly/mountainous region
-                if vdtnd[asp_ndx*nbins]-vdtnd[asp_ndx*nbins+1] >= 0:
-                    print('\nlowest bin DTND too large')
-                    print('lon/lat ',slon2d[j,i],slat2d[j,i])
-                    print(vdtnd[asp_ndx*nbins:asp_ndx*nbins+nbins],'\n')
-
-                    if np.logical_and(vdtnd[asp_ndx*nbins] == 0.0,vdtnd[asp_ndx*nbins+1] == 0.0):
-                        #    stop
-                        break
-
-                    x = np.log(vhand[asp_ndx*nbins:(asp_ndx+1)*nbins])
-                    y = np.log(vdtnd[asp_ndx*nbins:(asp_ndx+1)*nbins])
-                    # y=ax^b, linear in log(x)
-                    pcoefs = fit_polynomial(x[1:],y[1:],1)
-                    vdtnd[asp_ndx*nbins] = np.exp(synth_polynomial(x[0],pcoefs))
-                    # set minimum value for distance
-                    vdtnd[asp_ndx*nbins] = np.max([1.0,vdtnd[asp_ndx*nbins]])
+#                if vdtnd[asp_ndx*nbins]-vdtnd[asp_ndx*nbins+1] >= 0:
+#                    print('\nlowest bin DTND too large')
+#                    print('lon/lat ',slon2d[j,i],slat2d[j,i])
+#                    print(vdtnd[asp_ndx*nbins:asp_ndx*nbins+nbins],'\n')
+#
+#                    if np.logical_and(vdtnd[asp_ndx*nbins] == 0.0,vdtnd[asp_ndx*nbins+1] == 0.0):
+#                        #    stop
+#                        break
+#
+#                    x = np.log(vhand[asp_ndx*nbins:(asp_ndx+1)*nbins])
+#                    y = np.log(vdtnd[asp_ndx*nbins:(asp_ndx+1)*nbins])
+#                    # y=ax^b, linear in log(x)
+#                    pcoefs = fit_polynomial(x[1:],y[1:],1)
+#                    vdtnd[asp_ndx*nbins] = np.exp(synth_polynomial(x[0],pcoefs))
+#                    # set minimum value for distance
+#                    vdtnd[asp_ndx*nbins] = np.max([1.0,vdtnd[asp_ndx*nbins]])
 
                 # if bin distances overlap, combine bins
                 '''
@@ -768,10 +768,14 @@ def find_subgrid(ijind = [j,i]):
                 adjust indices to account for removal
                 '''
                 n = 1
+                print('vcolumn index:      ', vcolumn_index)
+                print('vdownhill_column_index:       ', vdownhill_column_index)
                 while n < nbins:
-                    if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[(asp_ndx*nbins+n):(asp_ndx*nbins+nbins)]).any():
+                    print(asp_ndx,n)
+    #                if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[(asp_ndx*nbins+n):(asp_ndx*nbins+nbins)]).any():
+                    if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+n]) and (vdtnd[asp_ndx*nbins+n]>0):
                         m = n
-                        while (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+m]) and (m<nbins):                   
+                        while (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+m]) and (m<nbins) and (vdtnd[asp_ndx*nbins+m]>0):                   
                             print('dtnd not monotonically increasing ', asp_ndx)
                             print(vdtnd[asp_ndx*nbins+0:asp_ndx*nbins+nbins])
                             print('combining columns ', n-1,' and ',m)
@@ -796,14 +800,18 @@ def find_subgrid(ijind = [j,i]):
                             vwidth[asp_ndx*nbins+m]  = 0
                             vzbedrock[asp_ndx*nbins+m]  = 0
                             vcolumn_index[asp_ndx*nbins+m] = 0
+                            vhillslope_index[asp_ndx*nbins+m] = 0
+                            vdownhill_column_index[asp_ndx*nbins+m] = 0
                             # decrement indices to account for removal
-                            vcolumn_index[asp_ndx*nbins+n+1:] -= 1
-                            vdownhill_column_index[asp_ndx*nbins+n+1:] -= 1
+                            vcolumn_index[asp_ndx*nbins+m+1:] -= 1
+                            vdownhill_column_index[asp_ndx*nbins+m+1:] -= 1
                             col_cnt -= 1
                             m += 1
-                        n = m
+                        n = m 
                     else:
                         n += 1
+                vcolumn_index[vcolumn_index<0] = 0
+                vdownhill_column_index[(vdownhill_column_index < 0)&(vdownhill_column_index>-9999)] = 0
 
                 # interpolate bedrock depth from valley to ridge
                 if interpolateBedrockProfile:
