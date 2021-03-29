@@ -86,12 +86,13 @@ interpolateBedrockProfile = False
 snum = 1
 if snum == 1:
     sfcfile = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/surfdata_nna4a_hist_16pfts_Irrig_CMIP6_simyr2000_c210222.nc'
-    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_Yukon.nc'
+    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
             
 
 if interpolateBedrockProfile:
     outfile = outfile.replace('bedrock_','bedrock_interp_')
-    
+
+ 
 print('base file is: ', sfcfile)
 
 #efile0 = '/glade/scratch/swensosc/PYSHEDS/pysheds.nNullLatwNullLon_elv.geo_params_mask_flats_'+str(athresh)+'.nc'
@@ -109,6 +110,9 @@ print('directory of mapping files for geoparam /depth to bedrock files is: %s'%(
 
 ds_target = xr.open_dataset(sfcfile)
 ds_target.load()
+
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210322.nc')
+landmask = domain_ds.mask.values
 
 # generate grid boundary file
 da_target_ = xr.DataArray(ds_target.LANDFRAC_PFT, dims=['x', 'y'],
@@ -196,7 +200,6 @@ f = netcdf4.Dataset(sfcfile, 'r')
 slon2d = np.asarray(f.variables['LONGXY'][:,])
 slat2d = np.asarray(f.variables['LATIXY'][:,])
 sjm,sim = np.shape(slon2d)
-landmask = np.asarray(f.variables['PFTDATA_MASK'][:,])
 pct_nat_pft = np.asarray(f.variables['PCT_NAT_PFT'][:,])
 npft = pct_nat_pft.shape[0]
 f.close()
@@ -775,38 +778,42 @@ def find_subgrid(ijind = [j,i]):
     #                if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[(asp_ndx*nbins+n):(asp_ndx*nbins+nbins)]).any():
                     if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+n]) and (vdtnd[asp_ndx*nbins+n]>0):
                         m = n
-                        while (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+m]) and (m<nbins) and (vdtnd[asp_ndx*nbins+m]>0):                   
-                            print('dtnd not monotonically increasing ', asp_ndx)
-                            print(vdtnd[asp_ndx*nbins+0:asp_ndx*nbins+nbins])
-                            print('combining columns ', n-1,' and ',m)
-                            print('lon/lat ',slon2d[j,i],slat2d[j,i],'\n')
+                        while m<nbins:
+                            if (vdtnd[asp_ndx*nbins+n-1] >= vdtnd[asp_ndx*nbins+m]) and (vdtnd[asp_ndx*nbins+m]>0):
+                                print('dtnd not monotonically increasing ', asp_ndx)
+                                print(vdtnd[asp_ndx*nbins+0:asp_ndx*nbins+nbins])
+                                print('combining columns ', n-1,' and ',m)
+                                print('lon/lat ',slon2d[j,i],slat2d[j,i],'\n')
 
-                            mean_hand = (vhand[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vhand[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
-                            vhand[asp_ndx*nbins+n-1] = mean_hand
-                            mean_slope = (vslope[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vslope[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
-                            vslope[asp_ndx*nbins+n-1] = mean_slope
+                                mean_hand = (vhand[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vhand[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
+                                vhand[asp_ndx*nbins+n-1] = mean_hand
+                                mean_slope = (vslope[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vslope[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
+                                vslope[asp_ndx*nbins+n-1] = mean_slope
 
-                            varea[asp_ndx*nbins+n-1] += varea[asp_ndx*nbins+m]
-                            vwidth[asp_ndx*nbins+n-1] += vwidth[asp_ndx*nbins+m]
-                            mean_bedrock = (vzbedrock[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vzbedrock[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
-                            vzbedrock[asp_ndx*nbins+n-1] = mean_bedrock
-                            print("------------------only for test: ",mean_hand, mean_slope, mean_bedrock, asp_ndx, n)
-                            # set removed column values to zero
-                            vhand[asp_ndx*nbins+m]   = 0
-                            vdtnd[asp_ndx*nbins+m]   = 0
-                            vslope[asp_ndx*nbins+m]  = 0
-                            vaspect[asp_ndx*nbins+m] = 0
-                            varea[asp_ndx*nbins+m]   = 0
-                            vwidth[asp_ndx*nbins+m]  = 0
-                            vzbedrock[asp_ndx*nbins+m]  = 0
-                            vcolumn_index[asp_ndx*nbins+m] = 0
-                            vhillslope_index[asp_ndx*nbins+m] = 0
-                            vdownhill_column_index[asp_ndx*nbins+m] = 0
-                            # decrement indices to account for removal
-                            vcolumn_index[asp_ndx*nbins+m+1:] -= 1
-                            vdownhill_column_index[asp_ndx*nbins+m+1:] -= 1
-                            col_cnt -= 1
-                            m += 1
+                                varea[asp_ndx*nbins+n-1] += varea[asp_ndx*nbins+m]
+                                vwidth[asp_ndx*nbins+n-1] += vwidth[asp_ndx*nbins+m]
+                                mean_bedrock = (vzbedrock[asp_ndx*nbins+n-1]*varea[asp_ndx*nbins+n-1] + vzbedrock[asp_ndx*nbins+m]*varea[asp_ndx*nbins+m])/(varea[asp_ndx*nbins+n-1] + varea[asp_ndx*nbins+m])
+                                vzbedrock[asp_ndx*nbins+n-1] = mean_bedrock
+                                print("------------------only for test: ",mean_hand, mean_slope, mean_bedrock, asp_ndx, n)
+                                # set removed column values to zero
+                                vhand[asp_ndx*nbins+m]   = 0
+                                vdtnd[asp_ndx*nbins+m]   = 0
+                                vslope[asp_ndx*nbins+m]  = 0
+                                vaspect[asp_ndx*nbins+m] = 0
+                                varea[asp_ndx*nbins+m]   = 0
+                                vwidth[asp_ndx*nbins+m]  = 0
+                                vzbedrock[asp_ndx*nbins+m]  = 0
+                                vcolumn_index[asp_ndx*nbins+m] = 0
+                                vhillslope_index[asp_ndx*nbins+m] = 0
+                                vdownhill_column_index[asp_ndx*nbins+m] = 0
+                                # decrement indices to account for removal
+                                vcolumn_index[asp_ndx*nbins+m+1:] -= 1
+                                vdownhill_column_index[asp_ndx*nbins+m+1:] -= 1
+                                col_cnt -= 1
+                                m += 1
+                                print("---------********test m     ",m, col_cnt)
+                            else:
+                                break
                         n = m 
                     else:
                         n += 1

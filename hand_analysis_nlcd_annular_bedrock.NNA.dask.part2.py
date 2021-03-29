@@ -60,13 +60,16 @@ interpolateBedrockProfile = False
 snum = 1
 if snum == 1:
     sfcfile = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/surfdata_nna4a_hist_16pfts_Irrig_CMIP6_simyr2000_c210222.nc'
-    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_Yukon.nc'
+    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
             
 
 if interpolateBedrockProfile:
     outfile = outfile.replace('bedrock_','bedrock_interp_')
     
 print('base file is: ', sfcfile)
+
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210322.nc')
+landmask = domain_ds.mask.values
 
 # define function
 def fit_polynomial(x,y,porder):
@@ -136,7 +139,6 @@ f = netcdf4.Dataset(sfcfile, 'r')
 slon2d = np.asarray(f.variables['LONGXY'][:,])
 slat2d = np.asarray(f.variables['LATIXY'][:,])
 sjm,sim = np.shape(slon2d)
-landmask = np.asarray(f.variables['PFTDATA_MASK'][:,])
 pct_nat_pft = np.asarray(f.variables['PCT_NAT_PFT'][:,])
 npft = pct_nat_pft.shape[0]
 f.close()
@@ -236,6 +238,31 @@ for j in range(jstart,jend):
             count += 1
 time2 = timeit.default_timer()
 print('it takes %s seconds to process %s grids'%(time2-time1, count))
+
+# modify pct_nat_pft when pft was missing 
+for j in range(jstart,jend):
+    for i in range(istart,iend):
+        if landmask[j,i] > 0:
+            hillslope_ind_sel = hillslope_index[:,j,i]
+            ind = np.where(hillslope_ind_sel>0)[0]
+            pct_pft_sel = pct_nat_pft[:,j,i]
+            h_pftndx_sel = pftndx[:,j,i][ind]
+            num_pftndx = len(np.unique(h_pftndx_sel))
+            num_overlap = len(set(np.where(pct_pft_sel>0)[0]).intersection(np.unique(h_pftndx_sel)))
+            if num_pftndx != num_overlap:
+                print('We will assign 1.0% to each missing pft')
+                pft_missing = list(set(np.unique(h_pftndx_sel)).difference(np.where(pct_pft_sel>0)[0]))
+                num_pft_missing = len(pft_missing)
+                print('Missing pft: %s'%(pft_missing))
+                pft_w_largest_fraction = np.argmax(pct_pft_sel)
+                pct_pft_w_largest_fraction = pct_pft_sel[pft_w_largest_fraction]
+                print('PCT with largest fraction: %s, pct: %s'%(pft_w_largest_fraction, pct_pft_w_largest_fraction))
+                pct_pft_w_largest_fraction_adjusted = pct_pft_w_largest_fraction - float(num_pft_missing)
+                print('Adjust the pft with largest pct')
+                wpct_nat_pft[pft_w_largest_fraction,j,i] = pct_pft_w_largest_fraction_adjusted
+                for pft in pft_missing:
+                    wpct_nat_pft[int(pft),j,i] = 1.0
+                print('Adjusted nat_pft_pct:%s'%(wpct_nat_pft[:,j,i]), np.sum(wpct_nat_pft[:,j,i]))
 
 # Compress data along column axis
 nhillcolumns = np.zeros((sjm,sim))
@@ -392,6 +419,76 @@ if checkSinglePoint:
     plt.show()
     stop
 
+# output file
+da_hand = xr.DataArray(hand,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_dtnd = xr.DataArray(dtnd,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_width = xr.DataArray(width,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_area = xr.DataArray(area,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_slope = xr.DataArray(slope,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_aspect = xr.DataArray(aspect,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_bedrock = xr.DataArray(zbedrock,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_pftndx = xr.DataArray(pftndx,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_nhillcolumns = xr.DataArray(nhillcolumns,dims=['lsmlat','lsmlon'])
+da_pct_hillslope = xr.DataArray(pct_hillslope,dims=['nhillslope','lsmlat','lsmlon'])
+da_hillndx = xr.DataArray(hillslope_index,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_column_index = xr.DataArray(column_index,dims=['nmaxhillcol','lsmlat','lsmlon'])
+da_downhill_column_index = xr.DataArray(downhill_column_index,dims=['nmaxhillcol','lsmlat','lsmlon'])
+
+# define data type
+da_hand = da_hand.astype(dtype=np.float64)
+da_dtnd = da_dtnd.astype(dtype=np.float64)
+da_width = da_width.astype(dtype=np.float64)
+da_area = da_area.astype(dtype=np.float64)
+da_slope = da_slope.astype(dtype=np.float64)
+da_aspect = da_aspect.astype(dtype=np.float64)
+da_bedrock = da_bedrock.astype(dtype=np.float64)
+da_pftndx = da_pftndx.astype(dtype=np.int32)
+da_nhillcolumns = da_nhillcolumns.astype(dtype=np.int32)
+da_pct_hillslope = da_pct_hillslope.astype(dtype=np.float64)
+da_hillndx = da_hillndx.astype(dtype=np.int32)
+da_column_index = da_column_index.astype(dtype=np.int32)
+da_downhill_column_index = da_downhill_column_index.astype(dtype=np.int32)
+
+# define attrs
+da_hand.attrs = {'units':'m','long_name':'hillslope height'}
+da_dtnd.attrs = {'units':'m','long_name':'hillslope length'}
+da_width.attrs = {'units':'m','long_name':'hillslope width'}
+da_area.attrs = {'units':'m2','long_name':'hillslope area'}
+da_slope.attrs = {'units':'m/m','long_name':'hillslope slope'}
+da_aspect.attrs = {'units':'radians','long_name':'hillslope aspect (clockwise from North)'}
+da_bedrock.attrs = {'units':'m','long_name':'hillslope bedrock depth'}
+da_pftndx.attrs = {'units':'m','long_name':'hillslope pft indices'}
+da_nhillcolumns.attrs = {'units':'unitless','long_name':'number of columns per landunit'}
+da_pct_hillslope.attrs = {'units':'per cent','long_name':'percent hillslope of landunit'}
+da_hillndx.attrs = {'units':'unitless','long_name':'hillslope_index'}
+da_column_index.attrs = {'units':'unitless','long_name':'column index'}
+da_downhill_column_index.attrs = {'units':'unitless','long_name':'downhill column index'}
+
+# attach to output files
+ds_target['h_height']=da_hand
+ds_target['h_length']=da_dtnd
+ds_target['h_width']=da_width
+ds_target['h_area']=da_area
+ds_target['h_slope']=da_slope
+ds_target['h_aspect']=da_aspect
+ds_target['h_bedrock']=da_bedrock
+ds_target['h_pftndx']=da_pftndx
+ds_target['nhillcolumns']=da_nhillcolumns
+ds_target['pct_hillslope']=da_pct_hillslope
+ds_target['hillslope_index']=da_hillndx
+ds_target['column_index']=da_column_index
+ds_target['downhill_column_index']=da_downhill_column_index
+
+# add _FillValue information to encoding
+encoding_dic = {}
+for var in ds_target.variables:
+    encoding_dic.update({var:{'_FillValue': None}})
+
+# output
+ds_target.to_netcdf(outfile, encoding=encoding_dic, format='NETCDF4_CLASSIC')
+
+
+'''
 # Write data to file
 
 command='date "+%y%m%d"'
@@ -412,23 +509,6 @@ w.createDimension('nhillslope',nhillslope)
 w.createDimension('nmaxhillcol',ncolumns_per_gridcell)
 
 # for high resolution dems, use 64bit precision for coordinates
-'''
-olon  = w.createVariable('longitude',np.float,('lsmlon',))
-olon.units = 'degrees'
-olon.long_name = 'longitude'
-
-olat  = w.createVariable('latitude',np.float,('lsmlat',))
-olat.units = 'degrees'
-olat.long_name = 'latitude'
-
-olon2d  = w.createVariable('LONGXY',np.float,('lsmlat','lsmlon',))
-olon2d.units = 'degrees'
-olon2d.long_name = 'longitude - 2d'
-
-olat2d  = w.createVariable('LATIXY',np.float,('lsmlat','lsmlon',))
-olat2d.units = 'degrees'
-olat2d.long_name = 'latitude - 2d'
-'''
 ohand = w.createVariable('h_height',np.float64,('nmaxhillcol','lsmlat','lsmlon',))
 ohand.units = 'm'
 ohand.long_name = 'hillslope height'
@@ -481,13 +561,6 @@ odcolndx  = w.createVariable('downhill_column_index',np.int32,('nmaxhillcol','ls
 odcolndx.units = 'unitless'
 odcolndx.long_name = 'downhill column index'
 
-'''
-olon[:,]   = slon
-olat[:,]   = slat
-olon2d[:,] = slon2d
-olat2d[:,] = slat2d
-'''
-
 ohand[:,]  = hand
 odtnd[:,]  = dtnd
 oarea[:,]  = area
@@ -507,4 +580,4 @@ w.variables['PCT_NAT_PFT'][:,] = wpct_nat_pft[:,]
 
 w.close()
 print(outfile+' created')
-
+'''
