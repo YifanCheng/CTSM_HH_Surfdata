@@ -18,6 +18,7 @@ import xesmf as xe
 import timeit
 from os import path
 import pandas as pd
+import os
 # ---------------------------------------------------------- #
 # Add geomorphic parameters and hillslope vegetation profiles
 # to an existing surface data file
@@ -30,7 +31,7 @@ from dask_jobqueue import PBSCluster
 from dask.distributed import Client
 
 cluster = PBSCluster(
-    queue="regular",
+    queue="economy",
     walltime="08:00:00",
     project="UCUB0089",
     memory="109GB",
@@ -50,10 +51,11 @@ cluster.scale(60)
 client = Client(cluster)
 
 # Output directory
-odir = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/'          
+odir = '/glade/work/yifanc/NNA/optmz/input/surfdata/nna4a/updated_hand_bins/'          
 
+'''
 # Specify hand data to use
-anum = 2
+anum = 3
 if anum == 1:
     athresh = 10000
     annular_sf = 1
@@ -67,8 +69,31 @@ if anum == 3:
 if anum == 4:
     athresh = 50
     annular_sf = 20
+'''
 
-nbins = 4
+dic_aspect_bins = {2:[[270,90],[90,270]],
+                   4:[[315,45],[45,135],[135,225],[225,315]]}
+
+# define the number of aspects and # columns in each hillslope
+sathresh = sys.argv[1]
+sannular_sf = sys.argv[2]
+snbins = sys.argv[3]
+snaspect = sys.argv[4] # N, E, S, W
+
+athresh = int(sathresh)
+annular_sf = int(sannular_sf)
+nbins = int(snbins)
+naspect = int(snaspect)
+
+aspect_bins = dic_aspect_bins[naspect] #[[315,45],[45,135],[135,225],[225,315]]
+dtr = np.pi/180.
+ncolumns_per_gridcell = naspect * nbins
+nhillslope = naspect
+
+temp_out_dir = "/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/delineation_thres_200/temp_file/athres_%s_annular_%s_nbins_%s_naspect_%s/"%(sathresh,sannular_sf,snbins,snaspect)
+
+if not path.isdir(temp_out_dir):
+    os.makedirs(temp_out_dir)
 
 # if true, ignore DTND values greater than some threshold
 removeTailDTND = True
@@ -86,7 +111,7 @@ interpolateBedrockProfile = False
 snum = 1
 if snum == 1:
     sfcfile = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/surfdata_nna4a_hist_16pfts_Irrig_CMIP6_simyr2000_c210222.nc'
-    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
+    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_aspect_'+str(naspect)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
             
 
 if interpolateBedrockProfile:
@@ -107,6 +132,7 @@ print('depth to bedrock files dir: ',dtb_dir)
 
 regrid_dir = '/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/'
 print('directory of mapping files for geoparam /depth to bedrock files is: %s'%(regrid_dir))
+
 
 ds_target = xr.open_dataset(sfcfile)
 ds_target.load()
@@ -233,13 +259,6 @@ for i in range(sim):
         tmp[1:9] = pct_nat_pft[1:9,j,i]
         vegmap[4,j,i] = np.argmax(tmp)
             
-naspect = 4 # N, E, S, W
-aspect_bins = [[315,45],[45,135],[135,225],[225,315]]
-dtr = np.pi/180.
-    
-ncolumns_per_gridcell = naspect * nbins
-nhillslope = naspect
-
 # for gridcells with no underlying DTB data
 missing_bedrock_depth = 2.0
 
@@ -328,7 +347,7 @@ def find_subgrid(ijind = [j,i]):
     # get all sub-gridcell info within the target gridcell
     for latlon_id in unique_file_latlon_list:
         mapfile = regrid_dir + 'regridding_conservative.%s.nc'%(latlon_id)
-        geofile = geo_dir + 'pysheds.%s_elv.geo_params_mask_flats_1000.nc'%(latlon_id)
+        geofile = geo_dir + 'pysheds.%s_elv.geo_params_mask_flats_%s.nc'%(latlon_id, athresh)
         vegfile = veg_dir + 'MODIS_LCT_Broxton.%s.nc'%(latlon_id)
         dbtfile = dtb_dir + '5x5min_ORNL_SOILS_%s.nc'%(latlon_id)
 
@@ -489,6 +508,47 @@ def find_subgrid(ijind = [j,i]):
         # calculate hand bins that will give roughly equal areas
         # subject to maximum height of 2m for lowest bin
         # this could also be done by explicitly summing to get cdf
+        '''
+        we used the range of the HAND value to determine the maximum 
+        allowable number of columns for each hillslope
+         # the maximum allowable columns for each hillslope is 6
+        '''
+        hand_interval = [20, 100, 200, 400, 800] 
+        shand_max = np.max(shand)
+        shand_min = np.min(shand)
+        shand_range = shand_max - shand_min
+        
+        # determine the maximum allowable columns
+        sel_hand_interval = hand_interval[0]
+        max_col_num = 1
+        while shand_range >= sel_hand_interval:
+            if max_col_num == len(hand_interval):
+                max_col_num = len(hand_interval) + 1
+                break
+            else:
+                sel_hand_interval = hand_interval[max_col_num]
+            max_col_num += 1
+        
+        # determine the number of columns which also
+        # considers "nbins"
+        col_num = np.min([nbins,max_col_num])
+        print(col_num,max_col_num)
+
+        # decide the bounds for the bins
+        hand_bin_bounds = [0]
+        if col_num < nbins:
+            extra_bins = nbins - col_num
+            for bin_id in range(1,col_num):
+                hand_bin_bounds.append(np.percentile(shand,bin_id/col_num*100))
+            hand_bin_bounds.append(1e6)
+            for extra_bin in range(extra_bins):
+                hand_bin_bounds.append(1e6+1+extra_bin)
+        else:
+            for bin_id in range(1,nbins):
+                hand_bin_bounds.append(np.percentile(shand,bin_id/nbins*100))
+            hand_bin_bounds.append(1e6) 
+
+        '''
         std_hand = std_dev(shand[shand > 0])
         #fitHand = True
         fitHand = False
@@ -524,10 +584,11 @@ def find_subgrid(ijind = [j,i]):
 
             # use quarters if bin1 = 0
             if bin1 == 0:
-                b25  = hbins[np.argmin(np.abs(0.25 - cum_histo_hand))+1]
-                b50  = hbins[np.argmin(np.abs(0.50 - cum_histo_hand))+1]
-                b75  = hbins[np.argmin(np.abs(0.75 - cum_histo_hand))+1]
-                hand_bin_bounds = [0,b25,b50,b75,1e6]
+                hand_bin_bounds = [0]
+                for bin in range(1, nbins):
+                    b_interval = hbins[np.argmin(np.abs(bin/nbins - cum_histo_hand))+1]
+                    hand_bin_bounds.append(b_interval)
+                hand_bin_bounds.append(1e6)
             else:
                 b33  = hbins[np.argmin(np.abs(0.33 - cum_histo_hand))+1]
                 b66  = hbins[np.argmin(np.abs(0.66 - cum_histo_hand))+1]
@@ -538,10 +599,10 @@ def find_subgrid(ijind = [j,i]):
                     #print(slon[i],slat[j])
                     # just shift b66 for now
                     hand_bin_bounds = [0,bin1,b33,2*b33-bin1,1e6]
-
+        '''
         if nbins != (len(hand_bin_bounds) - 1):
             print('bad hand bounds')
-            stop
+            sys.exit()
 
         if checkSinglePoint or printDebug:
             print('hand bin bounds ',hand_bin_bounds)
@@ -861,7 +922,6 @@ def find_subgrid(ijind = [j,i]):
                      'vcolumn_index','vdownhill_column_index'])
     # remove nan values
 #    s_df = s_df.dropna(axis=0)
-    temp_out_dir = "/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/temp_file/"
     v_df.to_csv(temp_out_dir + 'subgrid_files.params.j_%s_i_%s.csv'%(j,i),index=False)
 
     time2 = timeit.default_timer()
@@ -871,7 +931,6 @@ def find_subgrid(ijind = [j,i]):
 import dask.bag as db
 count = 0
 pair_list = []
-temp_out_dir = "/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/temp_file/"
 for i in range(sim):
     for j in range(sjm):
         filename = temp_out_dir + 'subgrid_files.params.j_%s_i_%s.csv'%(j,i)

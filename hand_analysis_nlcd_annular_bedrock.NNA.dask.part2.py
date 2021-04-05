@@ -24,10 +24,11 @@ import pandas as pd
 # ---------------------------------------------------------- #
 
 # Output directory
-odir = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/'          
+odir = '/glade/work/yifanc/NNA/optmz/input/surfdata/nna4a/updated_hand_bins/'
 
 # Specify hand data to use
-anum = 2
+'''
+anum = 3
 if anum == 1:
     athresh = 10000
     annular_sf = 1
@@ -41,9 +42,28 @@ if anum == 3:
 if anum == 4:
     athresh = 50
     annular_sf = 20
+'''
 
-nbins = 4
+dic_aspect_bins = {2:[[270,90],[90,270]],
+                   4:[[315,45],[45,135],[135,225],[225,315]]}
 
+sathresh = sys.argv[1]
+sannular_sf = sys.argv[2]
+snbins = sys.argv[3]
+snaspect = sys.argv[4] # N, E, S, W
+
+athresh = int(sathresh)
+annular_sf = int(sannular_sf)
+nbins = int(snbins)
+naspect = int(snaspect)
+
+aspect_bins = dic_aspect_bins[naspect] #[[315,45],[45,135],[135,225],[225,315]]
+dtr = np.pi/180.
+ncolumns_per_gridcell = naspect * nbins
+nhillslope = naspect
+
+# define the grid-level parameter directory
+temp_out_dir = "/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/delineation_thres_200/temp_file/athres_%s_annular_%s_nbins_%s_naspect_%s/"%(sathresh,sannular_sf,snbins,snaspect)
 # if true, ignore DTND values greater than some threshold
 removeTailDTND = True
 #removeTailDTND = False
@@ -60,7 +80,7 @@ interpolateBedrockProfile = False
 snum = 1
 if snum == 1:
     sfcfile = '/glade/work/yifanc/NNA/script/generate_surfdata/nna4a/surfdata_nna4a_hist_16pfts_Irrig_CMIP6_simyr2000_c210222.nc'
-    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
+    outfile = odir + 'surfdata_nna4a_hist_16pfts_HAND_'+str(nbins)+'_aspect_'+str(naspect)+'_col_hillslope_geo_params_'+str(athresh)+'_nlcd_annularx'+str(annular_sf)+'_bedrock_pe.nc'
             
 
 if interpolateBedrockProfile:
@@ -70,6 +90,7 @@ print('base file is: ', sfcfile)
 
 domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210322.nc')
 landmask = domain_ds.mask.values
+
 
 # define function
 def fit_polynomial(x,y,porder):
@@ -143,14 +164,6 @@ pct_nat_pft = np.asarray(f.variables['PCT_NAT_PFT'][:,])
 npft = pct_nat_pft.shape[0]
 f.close()
 
-# define the constant
-naspect = 4 # N, E, S, W
-aspect_bins = [[315,45],[45,135],[135,225],[225,315]]
-dtr = np.pi/180.
-    
-ncolumns_per_gridcell = naspect * nbins
-nhillslope = naspect
-
 # initialize new fields to be added to surface data file
 hand   = np.zeros((ncolumns_per_gridcell,sjm,sim))
 dtnd   = np.zeros((ncolumns_per_gridcell,sjm,sim))
@@ -215,7 +228,6 @@ else:
     printDebug = False
 
 # Loop over points in CTSM domain
-temp_out_dir = '/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/temp_file/'
 time1 = timeit.default_timer()
 count = 0
 for j in range(jstart,jend):
