@@ -137,7 +137,7 @@ print('directory of mapping files for geoparam /depth to bedrock files is: %s'%(
 ds_target = xr.open_dataset(sfcfile)
 ds_target.load()
 
-domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210322.nc')
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210605.nc')
 landmask = domain_ds.mask.values
 
 # generate grid boundary file
