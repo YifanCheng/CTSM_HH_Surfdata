@@ -66,6 +66,7 @@ nhillslope = naspect
 # below which the hillslope will be merged with nearby 
 # hillslopes
 thres_pct_hs_frac = 2.0
+thres_pct_c_frac = 0.5
 
 # define the grid-level parameter directory
 temp_out_dir = "/glade/scratch/yifanc/CTSM_HH_Surfdata_mapping/delineation_thres_200/temp_file/athres_%s_annular_%s_nbins_%s_naspect_%s/"%(sathresh,sannular_sf,snbins,snaspect)
@@ -93,7 +94,7 @@ if interpolateBedrockProfile:
     
 print('base file is: ', sfcfile)
 
-domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210605.nc')
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210630.nc')
 landmask = domain_ds.mask.values
 
 
@@ -436,7 +437,7 @@ for j in range(jstart,jend):
 # merge hillslope with areal fraction smaller than threshold
 
 # ======== Functions for merging ========= #
-def merge_columns(pct_hs,aspect_c,hillslope_index_c,hand_c):
+def merge_hillslopes(pct_hs,aspect_c,hillslope_index_c,hand_c):
     '''
     we will merge the hillslope with smallest 
     areal fraction
@@ -509,11 +510,15 @@ def update_merging_weighted_average_list(data, weight_data, dict_merge, scenario
         norm_t = w_t/(w_d+w_t)
         t_id = target_id-scenario
         d_id = del_id-scenario
-        data[t_id] = data[t_id]*norm_t + data[d_id]*norm_d
-        if whether_aspect:
+        if not whether_aspect:
+            data[t_id] = data[t_id]*norm_t + data[d_id]*norm_d
+        else:
             data[t_id] = np.arctan2((np.sin(dtr*data[t_id])*norm_t+np.sin(dtr*data[d_id])*norm_d),
                                     (np.cos(dtr*data[t_id])*norm_t+np.cos(dtr*data[d_id])*norm_d)) / dtr
-        data[del_id-scenario] = 0
+            if data[t_id] < 0:
+                data[t_id] += 360.
+        data[d_id] = 0
+
     # find non-zero data
     data_output = np.zeros(len(data))
     data_non_zero = data[data>0]
@@ -543,6 +548,14 @@ def update_downhill_hillslope_index(data, dict_merge):
     data_output[(data_output>-9999)&(data_output<0)] = 0
     return data_output
 
+def update_pftndx(data, dict_merge):
+    for i_del in dict_merge.keys():
+        data[i_del] = 0
+    # find non-zero data
+    data_output = np.zeros(len(data))
+    data_non_zero = data[data>0]
+    data_output[0:len(data_non_zero)] = data_non_zero
+    return data_output
 
 for j in range(jstart,jend):
     for i in range(istart,iend):
@@ -552,7 +565,8 @@ for j in range(jstart,jend):
             num_hs = int(np.sum(np.unique(hillslope_index[:,j,i])>0))
             if (pct_hs[pct_hs>0] < thres_pct_hs_frac).any():
                 while (pct_hs[pct_hs>0] < thres_pct_hs_frac).any():
-                    dict_c_from_to, dict_hs_from_to = merge_columns(pct_hs,aspect[:,j,i],hillslope_index[:,j,i],hand[:,j,i])
+                    print("start processing j=%s, i=%s"%(j,i))
+                    dict_c_from_to, dict_hs_from_to = merge_hillslopes(pct_hs,aspect[:,j,i],hillslope_index[:,j,i],hand[:,j,i])
                     num_hs -= len(dict_hs_from_to)
                     num_c -= len(dict_c_from_to)
                     area_c = area[:,j,i]
@@ -563,6 +577,7 @@ for j in range(jstart,jend):
                     slope[:,j,i] = update_merging_weighted_average_list(slope[:,j,i],area_c,dict_c_from_to,0)
                     aspect[:,j,i] = update_merging_weighted_average_list(aspect[:,j,i],area_c,dict_c_from_to,0,True)
                     zbedrock[:,j,i] = update_merging_weighted_average_list(zbedrock[:,j,i],area_c,dict_c_from_to,0)
+                    pftndx[:,j,i] = update_pftndx(pftndx[:,j,i],dict_c_from_to)
                     nhillcolumns[j,i] = num_c
                     hillslope_index[:,j,i] = update_hillslope_index(hillslope_index[:,j,i],dict_hs_from_to)
                     column_index[num_c:,j,i] = 0
@@ -571,6 +586,83 @@ for j in range(jstart,jend):
                     area[:,j,i] = update_merging_add_list(area[:,j,i],dict_c_from_to,0)
                     pct_hs = pct_hillslope[:,j,i]
 
+def merge_columns(area_c,hillslope_index_c,hand_c):
+    '''
+    This function merges the columns with tiny areal fraction.
+    Please note the column can only be merged with columns within this hillslope
+    '''
+    # step 1: find columns to be deleted
+    pct_area_c = area_c/np.sum(area_c) * 100
+    min_pct_area_c = np.min(pct_area_c[pct_area_c>0]) # we only find the columns with non-zero area
+    c_del_ind = np.where(pct_area_c == min_pct_area_c)[0][0]
+    # step 2: find target columns
+    hs_del = hillslope_index_c[c_del_ind]
+    c_hs = np.where(hillslope_index_c == hs_del)[0]
+    hand_diff_list = []
+    c_sel_list = []
+    for c_sel in c_hs:
+        if c_sel != c_del_ind:
+            hand_diff_list.append(abs(hand_c[c_del_ind]-hand_c[c_sel]))
+            c_sel_list.append(c_sel)
+    c_sel_list = np.array(c_sel_list).astype(np.int64)
+    c_target_ind = c_sel_list[hand_diff_list == np.min(hand_diff_list)][0]    
+    return {c_del_ind:c_target_ind}
+
+def update_downhill_hillslope_index_c(data, dict_merge, hillslope_index_c):
+    for i_del in dict_merge.keys():
+        data[i_del] = 0
+        hillslope_index_del = hillslope_index_c[i_del]
+        c_within_hs = np.where(hillslope_index_c == hillslope_index_del)[0]
+        if c_within_hs[0] == i_del:
+            data[c_within_hs[1]] = -9999
+        else:
+            data[c_within_hs[0]] = -9999
+        data[i_del:] -= 1
+
+    # find non-zero data
+    data_output = np.zeros(len(data))
+    data_non_zero = data[(data>0)|(data<=-9999)]
+    data_output[0:len(data_non_zero)] = data_non_zero
+    data_output[data_output<-9999] = -9999
+    data_output[(data_output>-9999)&(data_output<0)] = 0
+    return data_output
+
+def update_hillslope_index_c(data, dict_merge):
+    for i_del in dict_merge.keys():
+        data[i_del] = 0    
+    # find non-zero data
+    data_output = np.zeros(len(data))
+    data_non_zero = data[data>0]
+    data_output[0:len(data_non_zero)] = data_non_zero
+    return data_output
+
+# merge columns with small areal fractions
+for j in range(jstart,jend):
+    for i in range(istart,iend):
+        if landmask[j,i] > 0:
+            area_c = area[:,j,i]
+            pct_area_c = area_c/np.sum(area_c) * 100
+            num_c = int(nhillcolumns[j,i])
+            if (pct_area_c[pct_area_c>0] < thres_pct_c_frac).any():
+                while (pct_area_c[pct_area_c>0] < thres_pct_c_frac).any():
+                    dict_c_from_to = merge_columns(area_c,hillslope_index[:,j,i],hand[:,j,i])
+                    num_c -= len(dict_c_from_to)
+                    hand[:,j,i] = update_merging_weighted_average_list(hand[:,j,i],area_c,dict_c_from_to,0)
+                    dtnd[:,j,i] = update_merging_weighted_average_list(dtnd[:,j,i],area_c,dict_c_from_to,0)
+                    width[:,j,i] = update_merging_weighted_average_list(width[:,j,i],area_c,dict_c_from_to,0)
+                    slope[:,j,i] = update_merging_weighted_average_list(slope[:,j,i],area_c,dict_c_from_to,0)
+                    aspect[:,j,i] = update_merging_weighted_average_list(aspect[:,j,i],area_c,dict_c_from_to,0,True)
+                    zbedrock[:,j,i] = update_merging_weighted_average_list(zbedrock[:,j,i],area_c,dict_c_from_to,0)
+                    pftndx[:,j,i] = update_pftndx(pftndx[:,j,i],dict_c_from_to)
+                    nhillcolumns[j,i] = num_c
+                    # update downhill_column_index needs to happen before updating hillslope_index
+                    downhill_column_index[:,j,i] = update_downhill_hillslope_index_c(downhill_column_index[:,j,i], dict_c_from_to,hillslope_index[:,j,i])
+                    hillslope_index[:,j,i] = update_hillslope_index_c(hillslope_index[:,j,i],dict_c_from_to)
+                    column_index[num_c:,j,i] = 0
+                    #  update in area must be in the very last
+                    area[:,j,i] = update_merging_add_list(area[:,j,i],dict_c_from_to,0)
+                    area_c = area[:,j,i]
+                    pct_area_c = area_c/np.sum(area_c) * 100
 
 if checkSinglePoint:
     plt.show()

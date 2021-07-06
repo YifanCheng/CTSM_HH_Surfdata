@@ -88,7 +88,7 @@ if interpolateBedrockProfile:
     
 print('base file is: ', sfcfile)
 
-domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210605.nc')
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210630.nc')
 landmask = domain_ds.mask.values
 
 

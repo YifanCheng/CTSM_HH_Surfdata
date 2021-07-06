@@ -32,7 +32,7 @@ from dask.distributed import Client
 
 cluster = PBSCluster(
     queue="economy",
-    walltime="08:00:00",
+    walltime="12:00:00",
     project="UCUB0089",
     memory="109GB",
     resource_spec="select=1:ncpus=36:mem=109GB",
@@ -41,11 +41,11 @@ cluster = PBSCluster(
 )
 
 #num_one_run = 60
-num_worker = 60
+num_worker = 80
 
 # scale as needed
 #cluster.adapt(minimum_jobs=18, maximum_jobs=30)
-cluster.scale(60)
+cluster.scale(80)
 
 # Connect client to the remote dask workers
 client = Client(cluster)
@@ -137,7 +137,7 @@ print('directory of mapping files for geoparam /depth to bedrock files is: %s'%(
 ds_target = xr.open_dataset(sfcfile)
 ds_target.load()
 
-domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210605.nc')
+domain_ds = xr.open_dataset('/glade/work/yifanc/NNA/optmz/input/domain.arctic.pe.4km.c210630.nc')
 landmask = domain_ds.mask.values
 
 # generate grid boundary file
