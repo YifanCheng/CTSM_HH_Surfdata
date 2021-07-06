@@ -529,9 +529,16 @@ def update_hillslope_index(data, dict_merge):
     for i_del in dict_merge.keys():
         data[data==i_del] = 0
         data[data>i_del] -= 1
+    
     # find non-zero data
     data_output = np.zeros(len(data))
     data_non_zero = data[data>0]
+    # check whether the hillslope index start from 1
+    min_hillslope_index = np.min(data_non_zero)
+    if min_hillslope_index > 1:
+        print("minimum hillslope index:",min_hillslope_index)
+        data_non_zero -= (min_hillslope_index-1)
+    # write output
     data_output[0:len(data_non_zero)] = data_non_zero
     return data_output
 
