@@ -533,13 +533,15 @@ def update_hillslope_index(data, dict_merge):
     # find non-zero data
     data_output = np.zeros(len(data))
     data_non_zero = data[data>0]
-    # check whether the hillslope index start from 1
-    min_hillslope_index = np.min(data_non_zero)
-    if min_hillslope_index > 1:
-        print("minimum hillslope index:",min_hillslope_index)
-        data_non_zero -= (min_hillslope_index-1)
+    
+    # assign hillslope index (starting from 1)
+    data_hs = np.zeros(len(data_non_zero))
+    unique_data_non_zero = np.sort(np.unique(data_non_zero))
+    for i,val in enumerate(unique_data_non_zero):
+        data_hs[data_non_zero==val] = i+1
+        
     # write output
-    data_output[0:len(data_non_zero)] = data_non_zero
+    data_output[0:len(data_non_zero)] = data_hs
     return data_output
 
 def update_downhill_hillslope_index(data, dict_merge):
@@ -592,6 +594,19 @@ for j in range(jstart,jend):
                     #  update in area must be in the very last
                     area[:,j,i] = update_merging_add_list(area[:,j,i],dict_c_from_to,0)
                     pct_hs = pct_hillslope[:,j,i]
+
+# check whether the percentage of all hillslopes added up to 1
+for j in range(jstart,jend):
+    for i in range(istart,iend):
+        if landmask[j,i] > 0:
+            hs_ind_g = np.unique(hillslope_index[:,j,i])
+            ind = (hs_ind_g[hs_ind_g>0]-1).astype(np.int32)
+            pct_hs_g_sum = float(np.sum(pct_hillslope[ind,j,i]))
+            if abs(pct_hs_g_sum - 100.) > 1e-4:
+                print('errors in merging hillslopes')
+                print(j,i,hs_ind_g,pct_hs_g_sum)
+                sys.exit("errors in merging hillslopes") 
+
 
 def merge_columns(area_c,hillslope_index_c,hand_c):
     '''
